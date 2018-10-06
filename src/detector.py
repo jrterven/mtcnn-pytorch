@@ -11,7 +11,7 @@ def detect_faces(image, min_face_size=20.0,
                  nms_thresholds=[0.7, 0.7, 0.7]):
     """
     Arguments:
-        image: an instance of PIL.Image.
+        image: uint8 numpy array of shape [rows, cols, 3]
         min_face_size: a float number.
         thresholds: a list of length 3.
         nms_thresholds: a list of length 3.
@@ -28,7 +28,7 @@ def detect_faces(image, min_face_size=20.0,
     onet.eval()
 
     # BUILD AN IMAGE PYRAMID
-    width, height = image.size
+    width, height = image.shape[1], image.shape[0]
     min_length = min(height, width)
 
     min_detection_size = 12
@@ -61,6 +61,8 @@ def detect_faces(image, min_face_size=20.0,
 
     # collect boxes (and offsets, and scores) from different scales
     bounding_boxes = [i for i in bounding_boxes if i is not None]
+    if len(bounding_boxes) == 0:
+        return np.array([]), np.array([])
     bounding_boxes = np.vstack(bounding_boxes)
 
     keep = nms(bounding_boxes[:, 0:5], nms_thresholds[0])
@@ -76,49 +78,50 @@ def detect_faces(image, min_face_size=20.0,
     # STAGE 2
 
     img_boxes = get_image_boxes(bounding_boxes, image, size=24)
-    img_boxes = Variable(torch.FloatTensor(img_boxes), volatile=True)
-    output = rnet(img_boxes)
-    offsets = output[0].data.numpy()  # shape [n_boxes, 4]
-    probs = output[1].data.numpy()  # shape [n_boxes, 2]
+    with torch.no_grad():
+        img_boxes = Variable(torch.FloatTensor(img_boxes))
+        output = rnet(img_boxes)
+        offsets = output[0].data.numpy()  # shape [n_boxes, 4]
+        probs = output[1].data.numpy()  # shape [n_boxes, 2]
 
-    keep = np.where(probs[:, 1] > thresholds[1])[0]
-    bounding_boxes = bounding_boxes[keep]
-    bounding_boxes[:, 4] = probs[keep, 1].reshape((-1,))
-    offsets = offsets[keep]
+        keep = np.where(probs[:, 1] > thresholds[1])[0]
+        bounding_boxes = bounding_boxes[keep]
+        bounding_boxes[:, 4] = probs[keep, 1].reshape((-1,))
+        offsets = offsets[keep]
 
-    keep = nms(bounding_boxes, nms_thresholds[1])
-    bounding_boxes = bounding_boxes[keep]
-    bounding_boxes = calibrate_box(bounding_boxes, offsets[keep])
-    bounding_boxes = convert_to_square(bounding_boxes)
-    bounding_boxes[:, 0:4] = np.round(bounding_boxes[:, 0:4])
+        keep = nms(bounding_boxes, nms_thresholds[1])
+        bounding_boxes = bounding_boxes[keep]
+        bounding_boxes = calibrate_box(bounding_boxes, offsets[keep])
+        bounding_boxes = convert_to_square(bounding_boxes)
+        bounding_boxes[:, 0:4] = np.round(bounding_boxes[:, 0:4])
 
-    # STAGE 3
+        # STAGE 3
 
-    img_boxes = get_image_boxes(bounding_boxes, image, size=48)
-    if len(img_boxes) == 0: 
-        return [], []
-    img_boxes = Variable(torch.FloatTensor(img_boxes), volatile=True)
-    output = onet(img_boxes)
-    landmarks = output[0].data.numpy()  # shape [n_boxes, 10]
-    offsets = output[1].data.numpy()  # shape [n_boxes, 4]
-    probs = output[2].data.numpy()  # shape [n_boxes, 2]
+        img_boxes = get_image_boxes(bounding_boxes, image, size=48)
+        if len(img_boxes) == 0: 
+            return [], []
+        img_boxes = Variable(torch.FloatTensor(img_boxes))
+        output = onet(img_boxes)
+        landmarks = output[0].data.numpy()  # shape [n_boxes, 10]
+        offsets = output[1].data.numpy()  # shape [n_boxes, 4]
+        probs = output[2].data.numpy()  # shape [n_boxes, 2]
 
-    keep = np.where(probs[:, 1] > thresholds[2])[0]
-    bounding_boxes = bounding_boxes[keep]
-    bounding_boxes[:, 4] = probs[keep, 1].reshape((-1,))
-    offsets = offsets[keep]
-    landmarks = landmarks[keep]
+        keep = np.where(probs[:, 1] > thresholds[2])[0]
+        bounding_boxes = bounding_boxes[keep]
+        bounding_boxes[:, 4] = probs[keep, 1].reshape((-1,))
+        offsets = offsets[keep]
+        landmarks = landmarks[keep]
 
-    # compute landmark points
-    width = bounding_boxes[:, 2] - bounding_boxes[:, 0] + 1.0
-    height = bounding_boxes[:, 3] - bounding_boxes[:, 1] + 1.0
-    xmin, ymin = bounding_boxes[:, 0], bounding_boxes[:, 1]
-    landmarks[:, 0:5] = np.expand_dims(xmin, 1) + np.expand_dims(width, 1)*landmarks[:, 0:5]
-    landmarks[:, 5:10] = np.expand_dims(ymin, 1) + np.expand_dims(height, 1)*landmarks[:, 5:10]
+        # compute landmark points
+        width = bounding_boxes[:, 2] - bounding_boxes[:, 0] + 1.0
+        height = bounding_boxes[:, 3] - bounding_boxes[:, 1] + 1.0
+        xmin, ymin = bounding_boxes[:, 0], bounding_boxes[:, 1]
+        landmarks[:, 0:5] = np.expand_dims(xmin, 1) + np.expand_dims(width, 1)*landmarks[:, 0:5]
+        landmarks[:, 5:10] = np.expand_dims(ymin, 1) + np.expand_dims(height, 1)*landmarks[:, 5:10]
 
-    bounding_boxes = calibrate_box(bounding_boxes, offsets)
-    keep = nms(bounding_boxes, nms_thresholds[2], mode='min')
-    bounding_boxes = bounding_boxes[keep]
-    landmarks = landmarks[keep]
+        bounding_boxes = calibrate_box(bounding_boxes, offsets)
+        keep = nms(bounding_boxes, nms_thresholds[2], mode='min')
+        bounding_boxes = bounding_boxes[keep]
+        landmarks = landmarks[keep]
 
     return bounding_boxes, landmarks
