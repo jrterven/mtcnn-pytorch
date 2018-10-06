@@ -63,8 +63,8 @@ def detect_faces(image, min_face_size=20.0,
     bounding_boxes = [i for i in bounding_boxes if i is not None]
     if len(bounding_boxes) == 0:
         return np.array([]), np.array([])
-    bounding_boxes = np.vstack(bounding_boxes)
 
+    bounding_boxes = np.vstack(bounding_boxes)
     keep = nms(bounding_boxes[:, 0:5], nms_thresholds[0])
     bounding_boxes = bounding_boxes[keep]
 
@@ -73,6 +73,7 @@ def detect_faces(image, min_face_size=20.0,
     # shape [n_boxes, 5]
 
     bounding_boxes = convert_to_square(bounding_boxes)
+
     bounding_boxes[:, 0:4] = np.round(bounding_boxes[:, 0:4])
 
     # STAGE 2
@@ -99,7 +100,7 @@ def detect_faces(image, min_face_size=20.0,
 
         img_boxes = get_image_boxes(bounding_boxes, image, size=48)
         if len(img_boxes) == 0: 
-            return [], []
+            return np.array([]), np.array([])
         img_boxes = Variable(torch.FloatTensor(img_boxes))
         output = onet(img_boxes)
         landmarks = output[0].data.numpy()  # shape [n_boxes, 10]
